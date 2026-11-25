@@ -56,13 +56,14 @@ export class PoliceSystem {
     private readonly scene: THREE.Scene,
     private readonly layout: CityLayout,
     private readonly rand: () => number,
+    sirenLights = true,
   ) {
     for (let i = 0; i < 2; i += 1) {
       const h = new Helicopter(scene, i + 1, i === 0);
       h.hide();
       this.helis.push(h);
     }
-    for (const c of ['#ff2030', '#2050ff']) {
+    for (const c of sirenLights ? ['#ff2030', '#2050ff'] : []) {
       const l = new THREE.PointLight(c, 0, 28, 1.6);
       scene.add(l);
       this.sirenLights.push(l);
@@ -91,8 +92,7 @@ export class PoliceSystem {
       disposeVehicleVisual(c.v.visual.root);
     }
     this.cops.length = 0;
-    for (const s of this.spikes) this.scene.remove(s.mesh);
-    this.spikes.length = 0;
+    for (let i = this.spikes.length - 1; i >= 0; i -= 1) this.removeSpike(i);
     for (const h of this.helis) h.hide();
     this.spawnTimer = 0;
     this.roadblockTimer = 12;
@@ -362,14 +362,10 @@ export class PoliceSystem {
       const inX = s.alongX ? Math.abs(lx) < s.halfLen + 0.8 && Math.abs(lz) < 1.6 : Math.abs(lz) < s.halfLen + 0.8 && Math.abs(lx) < 1.6;
       if (inX && p.y < 1) {
         events.onSpike();
-        this.scene.remove(s.mesh);
-        this.spikes.splice(i, 1);
+        this.removeSpike(i);
         continue;
       }
-      if (s.life <= 0 && Math.hypot(lx, lz) > 80) {
-        this.scene.remove(s.mesh);
-        this.spikes.splice(i, 1);
-      }
+      if (s.life <= 0 && Math.hypot(lx, lz) > 80) this.removeSpike(i);
     }
 
     // ---- siren flashing and pooled lights on the two nearest cars
@@ -396,10 +392,12 @@ export class PoliceSystem {
         n2 = c;
       }
     }
-    const lights: [THREE.PointLight, Cop | null, boolean][] = [
-      [this.sirenLights[0], n1, true],
-      [this.sirenLights[1], n2 ?? n1, false],
-    ];
+    const lights: [THREE.PointLight, Cop | null, boolean][] = this.sirenLights.length
+      ? [
+          [this.sirenLights[0], n1, true],
+          [this.sirenLights[1], n2 ?? n1, false],
+        ]
+      : [];
     for (const [light, cop, red] of lights) {
       if (!cop) {
         light.intensity = 0;
@@ -409,6 +407,18 @@ export class PoliceSystem {
       light.position.set(cop.v.position.x, cop.v.position.y + 2.6, cop.v.position.z);
       light.intensity = (red ? ph > 0 : ph <= 0) ? 260 : 0;
     }
+  }
+
+  private removeSpike(i: number): void {
+    const s = this.spikes[i];
+    this.scene.remove(s.mesh);
+    s.mesh.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry.dispose();
+      (m.material as THREE.Material).dispose();
+    });
+    this.spikes.splice(i, 1);
   }
 
   remove(i: number): void {

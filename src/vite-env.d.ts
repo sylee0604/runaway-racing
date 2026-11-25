@@ -15,6 +15,8 @@ interface ThreeGameDiagnostics {
   spotted?: boolean;
   takedowns?: number;
   fps?: number;
+  tier?: number;
+  programs?: number;
   overReason?: string;
   dmg?: { wall: number; cop: number; civ: number };
   stalled?: { cops: number; civs: number };

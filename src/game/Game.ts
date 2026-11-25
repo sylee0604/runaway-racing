@@ -90,6 +90,9 @@ export class Game {
   private dprCap = 2;
   private fpsAvg = 60;
   private lowFpsTime = 0;
+  /** 0 = full, 1 = no bloom, 2 = no shadows. Raised automatically when frames are slow. */
+  private tier = 0;
+  private lastFrameAt = performance.now();
   private readonly dmgLog = { wall: 0, cop: 0, civ: 0 };
 
   private readonly els = {
@@ -100,9 +103,12 @@ export class Game {
   };
 
   constructor(private readonly canvas: HTMLCanvasElement) {
-    this.lowQuality = window.matchMedia('(pointer: coarse)').matches || Math.min(window.innerWidth, window.innerHeight) < 500;
-    this.dprCap = this.lowQuality ? 1.5 : 2;
-    this.renderer = createRenderer(canvas);
+    const q = new URLSearchParams(window.location.search);
+    // ?low / ?high force the quality profile; otherwise phones and small screens start low
+    this.lowQuality = q.has('low') || (!q.has('high') && (window.matchMedia('(pointer: coarse)').matches || Math.min(window.innerWidth, window.innerHeight) < 500));
+    this.dprCap = this.lowQuality ? 1 : 1.5;
+    this.tier = this.lowQuality ? 1 : 0;
+    this.renderer = createRenderer(canvas, !this.lowQuality);
     this.renderer.toneMappingExposure = this.tuning.exposure;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -110,6 +116,7 @@ export class Game {
     this.scene.environmentIntensity = 0.18;
     pmrem.dispose();
     this.renderer.info.autoReset = false;
+    this.renderer.shadowMap.autoUpdate = false;
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -122,9 +129,9 @@ export class Game {
     this.buildAtmosphere();
 
     this.physics = new Physics(this.layout);
-    this.effects = new Effects(this.rand);
+    this.effects = new Effects(this.rand, !this.lowQuality);
     this.scene.add(this.effects.group);
-    this.police = new PoliceSystem(this.scene, this.layout, this.rand);
+    this.police = new PoliceSystem(this.scene, this.layout, this.rand, !this.lowQuality);
     this.traffic = new TrafficSystem(this.scene, this.layout, this.rand, this.lowQuality ? 18 : undefined);
     this.pickups = new PickupSystem(this.scene, this.layout, this.rand);
     this.hud = new Hud(this.layout);
@@ -151,8 +158,25 @@ export class Game {
     this.showBest();
     this.resize();
     window.addEventListener('resize', this.onResize);
+    this.warmUpShaders();
     this.installTestHooks();
     this.publishDiagnostics();
+  }
+
+  /** Compile every shader up front so the first SWAT truck / explosion / helicopter doesn't stall a frame. */
+  private warmUpShaders(): void {
+    const kinds = ['patrol', 'interceptor', 'swat', 'apc'] as const;
+    kinds.forEach((k, i) => this.police.spawnCop(k, START.x + i * 8, START.z + 20, 0, 'parked'));
+    const hidden: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    this.renderer.compile(this.scene, this.camera);
+    for (const o of hidden) o.visible = false;
+    this.police.reset();
   }
 
   start(): void {
@@ -217,6 +241,14 @@ export class Game {
     this.moon.shadow.bias = -0.0008;
     this.moon.shadow.normalBias = 0.6;
     this.scene.add(this.moon, this.moon.target);
+  }
+
+  private setTier(tier: number): void {
+    this.tier = tier;
+    // tier 2: stop rendering shadow maps and fade them out via a uniform, so no shader recompiles mid-chase
+    const k = tier >= 2 ? 0 : 1;
+    this.moon.shadow.intensity = k;
+    this.police.helis[0].spot.shadow.intensity = k;
   }
 
   private applyTuning(): void {
@@ -376,13 +408,19 @@ export class Game {
 
   private update(dt: number): void {
     this.frame += 1;
-    this.fpsAvg = this.fpsAvg * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
+    const now = performance.now();
+    const realDt = Math.min(1, (now - this.lastFrameAt) / 1000);
+    this.fpsAvg = this.fpsAvg * 0.9 + (1 / Math.max(realDt, 1e-3)) * 0.1;
+    this.lastFrameAt = now;
     // adaptive resolution: step the pixel ratio down when the GPU can't keep up
     if (this.state === 'playing' && !this.pausedForScreenshot) {
-      this.lowFpsTime = this.fpsAvg < 38 ? this.lowFpsTime + dt : 0;
-      if (this.lowFpsTime > 3 && this.dprCap > 1) {
-        this.dprCap = Math.max(1, this.dprCap - 0.25);
+      this.lowFpsTime = this.fpsAvg < 38 ? this.lowFpsTime + realDt : 0;
+      if (this.lowFpsTime > 3) {
+        // cheapest wins first: resolution, then bloom, then shadows, then sub-native resolution
         this.lowFpsTime = 0;
+        if (this.dprCap > 1) this.dprCap = Math.max(1, this.dprCap - 0.25);
+        else if (this.tier < 2) this.setTier(this.tier + 1);
+        else if (this.dprCap > 0.75) this.dprCap = 0.75;
         this.resize(true);
       }
     }
@@ -766,7 +804,7 @@ export class Game {
         boosting: p.nitroActive,
         busted: Math.min(1, this.bustedTimer / BUSTED.seconds),
       });
-      if (this.frame % 2 === 0) {
+      if (this.frame % 3 === 0) {
         const items = this.pickups.items.filter((i) => i.active).map((i) => ({ x: i.group.position.x, z: i.group.position.z, type: i.type }));
         this.hud.drawMap(p, this.police.cops, this.police.helis, this.police.spikes, items, this.elapsed);
       }
@@ -786,7 +824,10 @@ export class Game {
 
   private render(): void {
     this.renderer.info.reset();
-    this.composer.render();
+    // moving shadows refreshed at half rate: halves the shadow pass, 1-frame lag is invisible
+    this.renderer.shadowMap.needsUpdate = this.tier < 2 && this.frame % 2 === 0;
+    if (this.tier >= 1) this.renderer.render(this.scene, this.camera);
+    else this.composer.render();
   }
 
   // -------------------------------------------------------------- testing
@@ -949,6 +990,8 @@ export class Game {
       spotted: this.police.spotted,
       takedowns: this.takedowns,
       fps: Math.round(this.fpsAvg),
+      tier: this.tier,
+      programs: this.renderer.info.programs?.length ?? 0,
       overReason: this.overReason,
       dmg: { ...this.dmgLog },
       stalled: { cops: this.police.cops.filter((c) => c.mode === 'chase' && c.v.speed < 1).length, civs: this.traffic.civs.filter((c) => c.v.speed < 0.5).length },

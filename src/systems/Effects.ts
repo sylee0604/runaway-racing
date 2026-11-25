@@ -37,7 +37,10 @@ export class Effects {
   private readonly v = new THREE.Vector3();
   private readonly s = new THREE.Vector3();
 
-  constructor(private readonly rand: () => number) {
+  constructor(
+    private readonly rand: () => number,
+    withFlashLight = true,
+  ) {
     this.sparkGeo.setAttribute('position', new THREE.BufferAttribute(this.sparkPos, 3));
     this.sparkGeo.setAttribute('color', new THREE.BufferAttribute(this.sparkCol, 3));
     const sparkMat = new THREE.PointsMaterial({
@@ -63,7 +66,7 @@ export class Effects {
       this.group.add(sprite);
       this.puffs.push({ sprite, vel: new THREE.Vector3(), life: 0, maxLife: 1, grow: 1, fade: 1, active: false });
     }
-    this.group.add(this.flash);
+    if (withFlashLight) this.group.add(this.flash); // a light left out of the scene costs nothing per pixel
 
     const skidGeo = new THREE.PlaneGeometry(0.34, 1.2);
     skidGeo.rotateX(-Math.PI / 2);
