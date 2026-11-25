@@ -17,6 +17,7 @@ interface ThreeGameDiagnostics {
   fps?: number;
   overReason?: string;
   dmg?: { wall: number; cop: number; civ: number };
+  stalled?: { cops: number; civs: number };
   player: {
     position: { x: number; y: number; z: number };
     speed: number;
@@ -53,6 +54,7 @@ interface ThreeGameTestHooks {
   advance?(seconds: number): ThreeGameDiagnostics | undefined;
   teleport?(x: number, z: number, heading: number, speed: number, throttle?: number): void;
   track?(seconds: number): unknown[];
+  viewFrom?(px: number, py: number, pz: number, tx: number, ty: number, tz: number): void;
 }
 
 interface Window {

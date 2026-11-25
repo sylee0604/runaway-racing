@@ -10,16 +10,9 @@ function wrapAngle(a: number): number {
   return a;
 }
 
-/** Point-in-solid test at the car's height (buildings, pillars, rails, props). */
+/** Point-in-solid test at the car's height (buildings, pillars, rails, props, islands). */
 function blocked(layout: CityLayout, x: number, z: number, y: number): boolean {
-  layout.queryBoxes(x, z, 0.1, scratch);
-  for (const i of scratch) {
-    const b = layout.boxes[i];
-    if (y >= b.y1 - 0.2 || y + 1.4 <= b.y0) continue;
-    if (x > b.x0 - 0.6 && x < b.x1 + 0.6 && z > b.z0 - 0.6 && z < b.z1 + 0.6) return true;
-  }
-  const s = layout.blockingSurface(x, z, y);
-  return s !== null;
+  return layout.isBlocked(x, z, y, 0.6, scratch);
 }
 
 /**
@@ -133,23 +126,13 @@ export class RouteFollower {
       return;
     }
     let node = layout.nodes[this.path[Math.min(this.index, this.path.length - 1)]];
-    if (Math.hypot(node.x - v.position.x, node.z - v.position.z) < 11 && this.index < this.path.length - 1) {
+    const reach = node.roundabout ? 17 : 11;
+    if (Math.hypot(node.x - v.position.x, node.z - v.position.z) < reach && this.index < this.path.length - 1) {
       this.index += 1;
       node = layout.nodes[this.path[this.index]];
     }
-    // lane offset to the right of travel direction (prev node -> node)
-    const prev = this.index > 0 ? layout.nodes[this.path[this.index - 1]] : null;
-    let ox = 0;
-    let oz = 0;
-    if (prev) {
-      const dx = node.x - prev.x;
-      const dz = node.z - prev.z;
-      const l = Math.hypot(dx, dz) || 1;
-      ox = (-dz / l) * LANE;
-      oz = (dx / l) * LANE;
-    }
-    out.x = node.x + ox;
-    out.z = node.z + oz;
+    const prevId = this.index > 0 ? this.path[this.index - 1] : null;
+    layout.laneTarget(prevId, node.id, LANE, out);
     out.final = this.index >= this.path.length - 1;
   }
 }

@@ -2,7 +2,8 @@ import type { Cop, Spike } from '../systems/PoliceSystem';
 import type { Helicopter } from '../entities/Helicopter';
 import type { Vehicle } from '../entities/Vehicle';
 import type { CityLayout } from '../world/CityLayout';
-import { HIGHWAY, RIVER, HILL } from '../game/config';
+import { CITY_HALF, HIGHWAYS, RIVER, HILL, ROUNDABOUT } from '../game/config';
+import { hwPoint } from '../world/CityLayout';
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -133,8 +134,8 @@ export class Hud {
   }
 
   // ------------------------------------------------------------ minimap
-  private readonly worldSize = 540;
-  private readonly baseRes = 1080;
+  private readonly worldSize = CITY_HALF * 2 + 60;
+  private readonly baseRes = 1400;
 
   private renderMapBase(): HTMLCanvasElement {
     const c = document.createElement('canvas');
@@ -148,7 +149,7 @@ export class Hud {
     ctx.fillRect(0, 0, c.width, c.height);
     // blocks
     for (const b of this.layout.blocks) {
-      ctx.fillStyle = b.type === 'park' ? '#1d3b25' : b.type === 'plaza' ? '#3a3328' : b.type === 'hill' ? '#22351f' : '#232838';
+      ctx.fillStyle = b.type === 'park' ? '#1d3b25' : b.type === 'plaza' ? '#3a3328' : b.type === 'hill' ? '#22351f' : b.type === 'lot' ? '#2c2d33' : '#232838';
       if (b.type !== 'river') ctx.fillRect(tx(b.x0), tz(b.z0), (b.x1 - b.x0) * k, (b.z1 - b.z0) * k);
     }
     for (const l of this.layout.lots) {
@@ -170,12 +171,35 @@ export class Hud {
       ctx.stroke();
     }
     // highway drawn on top, bright
-    ctx.strokeStyle = '#c9a54a';
-    ctx.lineWidth = HIGHWAY.width * k * 0.7;
-    ctx.beginPath();
-    ctx.moveTo(tx(-HIGHWAY.rampEnd), tz(HIGHWAY.z));
-    ctx.lineTo(tx(HIGHWAY.rampEnd), tz(HIGHWAY.z));
-    ctx.stroke();
+    // roundabouts
+    for (const r of this.layout.roundabouts) {
+      ctx.strokeStyle = '#5b6275';
+      ctx.lineWidth = (ROUNDABOUT.outer - ROUNDABOUT.island) * k;
+      ctx.beginPath();
+      ctx.arc(tx(r.x), tz(r.z), ((ROUNDABOUT.outer + ROUNDABOUT.island) / 2) * k, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#2a4a2c';
+      ctx.beginPath();
+      ctx.arc(tx(r.x), tz(r.z), ROUNDABOUT.island * k, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // expressways drawn on top, bright (B is higher, drawn last)
+    for (const hw of HIGHWAYS) {
+      const a = hwPoint(hw, -hw.rampEnd, 0);
+      const b = hwPoint(hw, hw.rampEnd, 0);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = hw.width * k * 0.95;
+      ctx.beginPath();
+      ctx.moveTo(tx(a.x), tz(a.z));
+      ctx.lineTo(tx(b.x), tz(b.z));
+      ctx.stroke();
+      ctx.strokeStyle = hw.id === 'A' ? '#c9a54a' : '#d07a3a';
+      ctx.lineWidth = hw.width * k * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(tx(a.x), tz(a.z));
+      ctx.lineTo(tx(b.x), tz(b.z));
+      ctx.stroke();
+    }
     // tunnel dashes
     ctx.strokeStyle = 'rgba(255,190,90,0.7)';
     ctx.setLineDash([10, 8]);

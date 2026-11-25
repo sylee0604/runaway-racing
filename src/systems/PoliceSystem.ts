@@ -177,7 +177,8 @@ export class PoliceSystem {
     }
     const rx = -Math.cos(heading);
     const rz = Math.sin(heading);
-    this.spawnCop(kind, n.x + rx * 3.6 + Math.sin(heading) * 6, n.z + rz * 3.6 + Math.cos(heading) * 6, heading);
+    const along = n.roundabout ? 24 : 7;
+    this.spawnCop(kind, n.x + rx * 4.2 + Math.sin(heading) * along, n.z + rz * 4.2 + Math.cos(heading) * along, heading);
   }
 
   private placeRoadblock(player: Vehicle, level: HeatLevel): void {
@@ -210,8 +211,9 @@ export class PoliceSystem {
     const ux = dx / l;
     const uz = dz / l;
     // 16m toward the approaching player from the intersection
-    const cx = node.x + ux * 16;
-    const cz = node.z + uz * 16;
+    const back = node.roundabout ? 30 : 16;
+    const cx = node.x + ux * back;
+    const cz = node.z + uz * back;
     const px = -uz;
     const pz = ux;
     const id = ++this.roadblockId;
@@ -260,7 +262,7 @@ export class PoliceSystem {
     const accuracy = (level.stars - 3) / 2;
     for (const h of this.helis) {
       if (!h.active) continue;
-      h.update(dt, p, player.velocity, Math.max(0.2, accuracy), elapsed);
+      h.update(dt, p, player.velocity, Math.max(0.2, accuracy), elapsed, this.layout);
       if (h.spotted) heliSpot = true;
     }
     this.spotted = anySees || heliSpot;

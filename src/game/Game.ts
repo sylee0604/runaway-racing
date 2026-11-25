@@ -53,10 +53,10 @@ export class Game {
   private readonly hud: Hud;
   private readonly cameraRig: CameraRig;
   private readonly moon = new THREE.DirectionalLight('#9db4ff', 1.1);
-  private readonly headlight = new THREE.SpotLight('#fff3dc', 0, 70, 0.55, 0.45, 1.3);
+  private readonly headlight = new THREE.SpotLight('#fff3dc', 0, 60, 0.5, 0.6, 1.5);
   private readonly loop: Loop;
   private readonly debug: DebugTools;
-  private readonly tuning: DebugTuning = { exposure: 1.05, bloomStrength: 0.75, bloomThreshold: 0.82, maxDpr: 2, godMode: false, freezeHeat: false };
+  private readonly tuning: DebugTuning = { exposure: 1.0, bloomStrength: 0.5, bloomThreshold: 0.92, maxDpr: 2, godMode: false, freezeHeat: false };
 
   private state: GameState = 'title';
   private frame = 0;
@@ -107,7 +107,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.32;
+    this.scene.environmentIntensity = 0.18;
     pmrem.dispose();
     this.renderer.info.autoReset = false;
 
@@ -125,10 +125,10 @@ export class Game {
     this.effects = new Effects(this.rand);
     this.scene.add(this.effects.group);
     this.police = new PoliceSystem(this.scene, this.layout, this.rand);
-    this.traffic = new TrafficSystem(this.scene, this.layout, this.rand, this.lowQuality ? 14 : undefined);
+    this.traffic = new TrafficSystem(this.scene, this.layout, this.rand, this.lowQuality ? 18 : undefined);
     this.pickups = new PickupSystem(this.scene, this.layout, this.rand);
     this.hud = new Hud(this.layout);
-    this.cameraRig = new CameraRig(this.camera);
+    this.cameraRig = new CameraRig(this.camera, this.layout);
 
     this.player.visual.root.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
@@ -137,7 +137,7 @@ export class Game {
     this.headlight.position.set(0, 1.1, 1.6);
     this.headlight.target.position.set(0, -1.5, 20);
     this.player.visual.root.add(this.headlight, this.headlight.target);
-    this.headlight.intensity = 900;
+    this.headlight.intensity = 520;
 
     if (new URLSearchParams(window.location.search).has('god')) this.tuning.godMode = true;
     this.input = new InputController(this.els.touch);
@@ -175,7 +175,7 @@ export class Game {
   // ----------------------------------------------------------------- setup
 
   private buildAtmosphere(): void {
-    this.scene.fog = new THREE.FogExp2('#0e1124', 0.0029);
+    this.scene.fog = new THREE.FogExp2('#0e1124', 0.0024);
     this.scene.background = new THREE.Color('#05060c');
     const sky = new THREE.Mesh(
       new THREE.SphereGeometry(1300, 32, 16),
@@ -758,7 +758,7 @@ export class Game {
         cash: this.cash,
         takedowns: this.takedowns,
         stars: this.stars,
-        heatLabel: this.police.spotted ? HEAT_LEVELS[this.stars - 1].label : hiddenFromAir(p.position.x, p.position.y, p.position.z) ? '은신 중 — 헬기가 볼 수 없다' : '경찰이 마지막 목격 지점을 수색 중',
+        heatLabel: this.police.spotted ? HEAT_LEVELS[this.stars - 1].label : hiddenFromAir(this.layout, p.position.x, p.position.y, p.position.z) ? '은신 중 — 헬기가 볼 수 없다' : '경찰이 마지막 목격 지점을 수색 중',
         evading: !this.police.spotted,
         health: frac,
         nitro: this.nitro,
@@ -824,7 +824,7 @@ export class Game {
           const h = this.police.helis[0];
           h.spawn(40, 30, 0);
           h.position.set(44, 22, 26);
-          h.update(0.016, this.player.position, this.player.velocity, 1, this.elapsed);
+          h.update(0.016, this.player.position, this.player.velocity, 1, this.elapsed, this.layout);
           h.position.set(44, 22, 26);
           h.visual.root.position.copy(h.position);
           for (const c of this.police.cops) c.v.syncVisual(0.016);
@@ -893,6 +893,18 @@ export class Game {
         this.publishDiagnostics();
         return window.__THREE_GAME_DIAGNOSTICS__;
       },
+      viewFrom: (px: number, py: number, pz: number, tx: number, ty: number, tz: number) => {
+        this.showcase = true;
+        this.hud.show(false);
+        this.camera.position.set(px, py, pz);
+        this.camera.lookAt(tx, ty, tz);
+        this.camera.fov = 60;
+        this.camera.updateProjectionMatrix();
+        this.moon.position.set(tx - 90, 160, tz - 60);
+        this.moon.target.position.set(tx, 0, tz);
+        this.moon.target.updateMatrixWorld();
+        this.render();
+      },
       teleport: (x: number, z: number, heading: number, speed: number, throttle = 1) => {
         this.autopilot = false;
         this.player.place(x, this.layout.groundAt(x, z, 0.5), z, heading);
@@ -939,6 +951,7 @@ export class Game {
       fps: Math.round(this.fpsAvg),
       overReason: this.overReason,
       dmg: { ...this.dmgLog },
+      stalled: { cops: this.police.cops.filter((c) => c.mode === 'chase' && c.v.speed < 1).length, civs: this.traffic.civs.filter((c) => c.v.speed < 0.5).length },
       player: {
         position: { x: p.position.x, y: p.position.y, z: p.position.z },
         speed: p.speed,

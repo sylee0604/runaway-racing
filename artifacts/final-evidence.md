@@ -1,4 +1,4 @@
-# Final evidence — RUNAWAY CITY (pass-1)
+# Final evidence — RUNAWAY CITY (pass-2: bigger map)
 
 Design: [game-design.md](game-design.md)
 
@@ -27,3 +27,11 @@ Player 44 m/s (+14 nitro), patrol 37, interceptor 46, SWAT 34 (mass 3.2), APC 31
 - Real-GPU frame rate not measured here.
 - Cops path on the road graph; alleys/park shortcuts are only used in direct pursuit.
 - No external art/audio (procedural by necessity).
+
+## Pass-2 changes (map expansion + fixes)
+- Map 9×9 → 13×13 grid (~730 m square). Two crossing expressways (A east-west 10 m, B north-south 16 m over A), 4 roundabouts (circle colliders, AI passes around the island via `laneTarget`), car park with solid parked cars, 3 parks, bigger hill tunnel, river moved to x=-210 with 5 bridges + jump.
+- Fixed see-through walls: hill retaining walls, canal walls and ramp ends had inward-facing quads → double-sided materials.
+- Added missing colliders: traffic lights, bridge lamps, gantry posts; deck lamps sit on barriers.
+- Pickups keep ≥32 m apart and avoid solids.
+- Glare: bloom 0.75→0.5 (threshold 0.92), env intensity 0.32→0.18, headlight 900→520, heli spot 1500→900, darker concrete, lower emissive on storefronts/facades.
+- Checks: tsc clean, build OK, Playwright 2/2, inspector pass-2 10/10 PASS, physics probes (A/B ramps, under-ramp pass, B over A, roundabout island blocks), god-mode sim to ★5 with 0–1 stalled cops per sample.

@@ -12,7 +12,8 @@ interface Pickup {
   respawn: number;
 }
 
-const COUNTS: Record<PickupType, number> = { cash: 5, repair: 2, nitro: 3 };
+const COUNTS: Record<PickupType, number> = { cash: 7, repair: 3, nitro: 4 };
+const MIN_SPACING = 32;
 const COLORS: Record<PickupType, THREE.Color> = {
   cash: new THREE.Color(0.3, 2.6, 0.6),
   repair: new THREE.Color(2.8, 0.5, 0.4),
@@ -84,27 +85,41 @@ export class PickupSystem {
   }
 
   reset(px: number, pz: number): void {
-    for (const it of this.items) this.place(it, px, pz, 30, 160);
+    for (const it of this.items) {
+      it.active = false;
+      it.group.visible = false;
+    }
+    for (const it of this.items) this.place(it, px, pz, 30, 220);
   }
 
   private place(it: Pickup, px: number, pz: number, minD: number, maxD: number): void {
-    for (let tries = 0; tries < 40; tries += 1) {
+    for (let tries = 0; tries < 80; tries += 1) {
       const pt = this.layout.randomRoadPoint(this.rand);
       const d = Math.hypot(pt.x - px, pt.z - pz);
       if (d < minD || d > maxD) continue;
       const lane = (this.rand() - 0.5) * 9;
-      it.group.position.set(pt.x - pt.dirZ * lane, 0, pt.z + pt.dirX * lane);
+      const x = pt.x - pt.dirZ * lane;
+      const z = pt.z + pt.dirX * lane;
+      // keep pickups apart and out of solids (pillars, props)
+      let crowded = false;
+      for (const o of this.items) {
+        if (o === it || !o.active) continue;
+        if (Math.hypot(o.group.position.x - x, o.group.position.z - z) < MIN_SPACING) crowded = true;
+      }
+      if (crowded || this.layout.isBlocked(x, z, 0, 1.5)) continue;
+      it.group.position.set(x, 0, z);
       it.group.visible = true;
       it.active = true;
       return;
     }
+    it.respawn = 2; // no free spot right now: try again shortly
   }
 
   update(dt: number, elapsed: number, player: THREE.Vector3, onPick: (type: PickupType, at: THREE.Vector3) => void): void {
     for (const it of this.items) {
       if (!it.active) {
         it.respawn -= dt;
-        if (it.respawn <= 0) this.place(it, player.x, player.z, 60, 180);
+        if (it.respawn <= 0) this.place(it, player.x, player.z, 60, 220);
         continue;
       }
       it.icon.rotation.y = elapsed * 2.4;
@@ -117,8 +132,8 @@ export class PickupSystem {
         it.group.visible = false;
         it.respawn = 6;
         onPick(it.type, it.group.position);
-      } else if (d2 > 260 * 260) {
-        this.place(it, player.x, player.z, 60, 180);
+      } else if (d2 > 300 * 300) {
+        this.place(it, player.x, player.z, 60, 220);
       }
     }
   }

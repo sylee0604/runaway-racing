@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "runId": "pass-1",
+  "runId": "pass-2",
   "captures": [
-    { "mode": "desktop", "state": "title", "report": "artifacts/pass-1/desktop-title.json" },
-    { "mode": "desktop", "state": "active-play", "report": "artifacts/pass-1/desktop-active-play.json" },
-    { "mode": "desktop", "state": "heat-3", "report": "artifacts/pass-1/desktop-heat-3.json" },
-    { "mode": "desktop", "state": "heat-5", "report": "artifacts/pass-1/desktop-heat-5.json" },
-    { "mode": "desktop", "state": "tunnel", "report": "artifacts/pass-1/desktop-tunnel.json" },
-    { "mode": "desktop", "state": "underpass", "report": "artifacts/pass-1/desktop-underpass.json" },
-    { "mode": "desktop", "state": "garage", "report": "artifacts/pass-1/desktop-garage.json" },
-    { "mode": "desktop", "state": "game-over", "report": "artifacts/pass-1/desktop-game-over.json" },
-    { "mode": "mobile", "state": "active-play", "report": "artifacts/pass-1/mobile-active-play.json" },
-    { "mode": "mobile", "state": "heat-3", "report": "artifacts/pass-1/mobile-heat-3.json" }
+    { "mode": "desktop", "state": "title", "report": "artifacts/pass-2/desktop-title.json" },
+    { "mode": "desktop", "state": "active-play", "report": "artifacts/pass-2/desktop-active-play.json" },
+    { "mode": "desktop", "state": "heat-3", "report": "artifacts/pass-2/desktop-heat-3.json" },
+    { "mode": "desktop", "state": "heat-5", "report": "artifacts/pass-2/desktop-heat-5.json" },
+    { "mode": "desktop", "state": "tunnel", "report": "artifacts/pass-2/desktop-tunnel.json" },
+    { "mode": "desktop", "state": "underpass", "report": "artifacts/pass-2/desktop-underpass.json" },
+    { "mode": "desktop", "state": "garage", "report": "artifacts/pass-2/desktop-garage.json" },
+    { "mode": "desktop", "state": "game-over", "report": "artifacts/pass-2/desktop-game-over.json" },
+    { "mode": "mobile", "state": "active-play", "report": "artifacts/pass-2/mobile-active-play.json" },
+    { "mode": "mobile", "state": "heat-3", "report": "artifacts/pass-2/mobile-heat-3.json" }
   ]
 }

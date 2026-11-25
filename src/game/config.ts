@@ -2,36 +2,63 @@
 
 export const GRID = {
   spacing: 60,
-  min: -4,
-  max: 4,
+  min: -6,
+  max: 6,
   roadWidth: 16,
   sidewalk: 3,
 } as const;
 
-export const CITY_HALF = GRID.spacing * GRID.max; // 240
+export const CITY_HALF = GRID.spacing * GRID.max; // 360
 
+export interface HighwayDef {
+  id: string;
+  axis: 'x' | 'z'; // direction the deck runs along
+  line: number; // the other coordinate of its centreline (road it sits over)
+  height: number;
+  deckHalf: number; // deck spans [-deckHalf, deckHalf] along the axis
+  rampEnd: number; // ramps reach the ground at ±rampEnd
+  width: number;
+}
+
+/** Two elevated expressways: A runs east-west at 10 m, B runs north-south at 16 m and crosses over A. */
+export const HIGHWAYS: HighwayDef[] = [
+  { id: 'A', axis: 'x', line: -120, height: 10, deckHalf: 308, rampEnd: 352, width: 16 },
+  { id: 'B', axis: 'z', line: 120, height: 16, deckHalf: 248, rampEnd: 352, width: 16 },
+];
+
+/** Kept for code that only needs the first expressway. */
 export const HIGHWAY = {
-  z: -60,
-  height: 10,
-  deckHalfLength: 188, // deck spans x ∈ [-188, 188]
-  rampEnd: 232, // ramps reach ground at |x| = 232
-  width: 16,
+  z: HIGHWAYS[0].line,
+  height: HIGHWAYS[0].height,
+  deckHalfLength: HIGHWAYS[0].deckHalf,
+  rampEnd: HIGHWAYS[0].rampEnd,
+  width: HIGHWAYS[0].width,
 } as const;
 
 export const RIVER = {
-  x: -150,
+  x: -210,
   halfWidth: 18,
-  bridgeRows: [-4, -2, 0, 3] as number[],
+  bridgeRows: [-6, -3, 0, 2, 5] as number[],
+  jumpRow: -4,
   waterY: -4.5,
 } as const;
 
 export const HILL = {
-  x0: 68,
-  x1: 232,
+  x0: 188,
+  x1: 352,
   z0: 128,
   z1: 232,
   tunnelZ: 180,
 } as const;
+
+/** Grid nodes (i, j) that are roundabouts instead of plain crossings. */
+export const ROUNDABOUTS: [number, number][] = [
+  [0, 3],
+  [4, -4],
+  [-2, -5],
+  [5, 0],
+];
+export const ROUNDABOUT = { island: 9, outer: 19 } as const;
 
 export interface VehicleSpec {
   name: string;
@@ -191,4 +218,4 @@ export const SCORE = {
   cash: 250,
 };
 
-export const TRAFFIC_COUNT = 22;
+export const TRAFFIC_COUNT = 30;

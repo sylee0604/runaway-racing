@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { Vehicle } from '../entities/Vehicle';
+import { HILL } from '../game/config';
+import type { CityLayout } from '../world/CityLayout';
 
 /** Chase camera with speed FOV, drift-aware yaw lag, shake, and a title orbit mode. */
 export class CameraRig {
@@ -10,7 +12,10 @@ export class CameraRig {
   private fov = 62;
   private readonly tmp = new THREE.Vector3();
 
-  constructor(private readonly camera: THREE.PerspectiveCamera) {}
+  constructor(
+    private readonly camera: THREE.PerspectiveCamera,
+    private readonly layout: CityLayout,
+  ) {}
 
   addShake(amount: number): void {
     this.shake = Math.min(1.2, this.shake + amount);
@@ -47,12 +52,10 @@ export class CameraRig {
     this.pos.lerp(this.tmp, lookBack ? 1 : k);
     // never dip below the car (ramps) and keep under tunnel/deck ceilings
     this.pos.y = Math.max(this.pos.y, v.position.y + 2.2);
-    if (v.position.y < 5) {
-      const inTunnel = v.position.x > 68 && v.position.x < 232 && Math.abs(v.position.z - 180) < 9;
-      const underDeck = Math.abs(v.position.z + 60) < 9 && Math.abs(v.position.x) < 188;
-      if (inTunnel) this.pos.y = Math.min(this.pos.y, 6.6);
-      if (underDeck) this.pos.y = Math.min(this.pos.y, 7.2);
-    }
+    const inTunnel = v.position.y < 5 && v.position.x > HILL.x0 - 4 && v.position.x < HILL.x1 + 4 && Math.abs(v.position.z - HILL.tunnelZ) < 9;
+    if (inTunnel) this.pos.y = Math.min(this.pos.y, 6.6);
+    const ceiling = this.layout.ceilingAbove(this.pos.x, v.position.y, this.pos.z);
+    if (ceiling < Infinity) this.pos.y = Math.min(this.pos.y, ceiling - 1);
     const ahead = 6 + v.speed * 0.12;
     const lx = v.position.x + Math.sin(this.yaw) * ahead * (lookBack ? -1 : 1);
     const lz = v.position.z + Math.cos(this.yaw) * ahead * (lookBack ? -1 : 1);

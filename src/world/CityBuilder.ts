@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { CITY_HALF, GRID, HIGHWAY, HILL, RIVER } from '../game/config';
+import { CITY_HALF, GRID, HIGHWAYS, HILL, RIVER, ROUNDABOUT } from '../game/config';
 import { createSeededRandom } from '../utils/random';
 import { Batch, type V3 } from './Batch';
-import type { CityLayout } from './CityLayout';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { hwHeightAt, hwPoint, hwRect, type CityLayout } from './CityLayout';
 import * as T from './textures';
 
 const S = GRID.spacing;
@@ -37,7 +38,9 @@ export class CityBuilder {
     this.buildRoads();
     this.buildSidewalks();
     this.buildBuildings();
-    this.buildHighway();
+    for (let i = 0; i < HIGHWAYS.length; i += 1) this.buildHighway(i);
+    this.buildRoundabouts();
+    this.buildParkingLots();
     this.buildRiver();
     this.buildHill();
     this.buildPlaza();
@@ -117,6 +120,8 @@ export class CityBuilder {
 
     const nodeKey = (x: number, z: number) => `${Math.round(x)}:${Math.round(z)}`;
     const groundNodes = new Set(this.layout.nodes.filter((n) => n.level === 'ground' && n.edges.length).map((n) => nodeKey(n.x, n.z)));
+    const rbNodes = new Set(this.layout.roundabouts.map((r) => nodeKey(r.x, r.z)));
+    const trimAt = (x: number, z: number) => (rbNodes.has(nodeKey(x, z)) ? ROUNDABOUT.outer - 1 : groundNodes.has(nodeKey(x, z)) ? HR : 0);
 
     for (const seg of this.layout.roads) {
       const dx = seg.bx - seg.ax;
@@ -130,8 +135,8 @@ export class CityBuilder {
       let t0 = 0;
       let t1 = len;
       if (seg.y0 === 0 && seg.y1 === 0) {
-        if (groundNodes.has(nodeKey(seg.ax, seg.az))) t0 = HR;
-        if (groundNodes.has(nodeKey(seg.bx, seg.bz))) t1 = len - HR;
+        t0 = trimAt(seg.ax, seg.az);
+        t1 = len - trimAt(seg.bx, seg.bz);
       }
       const lift = seg.kind === 'highway' || seg.kind === 'ramp' ? 0.03 : 0.02;
       const y0 = seg.y0 + (seg.y1 - seg.y0) * (t0 / len) + lift;
@@ -151,7 +156,7 @@ export class CityBuilder {
       );
     }
     for (const n of this.layout.nodes) {
-      if (n.level !== 'ground' || n.edges.length === 0) continue;
+      if (n.level !== 'ground' || n.edges.length === 0 || n.roundabout) continue;
       inter.upQuad([n.x - HR, 0.025, n.z + HR], [n.x + HR, 0.025, n.z + HR], [n.x + HR, 0.025, n.z - HR], [n.x - HR, 0.025, n.z - HR]);
     }
     this.add(roads.build(), roadMat);
@@ -165,7 +170,7 @@ export class CityBuilder {
     const walks = new Batch();
     const curbs = new Batch();
     for (const b of this.layout.blocks) {
-      if (b.type === 'city' || b.type === 'park' || b.type === 'plaza') {
+      if (b.type === 'city' || b.type === 'park' || b.type === 'plaza' || b.type === 'lot') {
         if (b.type === 'city') walks.box(b.x0, 0, b.z0, b.x1, 0.14, b.z1, { uScale: 4, vScale: 4, sides: false, topScale: 4 });
         curbs.box(b.x0, 0, b.z0, b.x1, 0.15, b.z0 + 0.3, { top: true });
         curbs.box(b.x0, 0, b.z1 - 0.3, b.x1, 0.15, b.z1, { top: true });
@@ -318,9 +323,9 @@ export class CityBuilder {
           map: this.tex(f.map),
           emissiveMap: this.tex(f.emissive),
           emissive: new THREE.Color('#ffffff'),
-          emissiveIntensity: 1.1,
-          roughness: 0.72,
-          metalness: 0.15,
+          emissiveIntensity: 0.95,
+          roughness: 0.88,
+          metalness: 0.05,
         }),
       );
       if (!batches[i].empty) this.add(batches[i].build(), m, { cast: true, receive: true });
@@ -330,7 +335,7 @@ export class CityBuilder {
     const propMat = this.mat(new THREE.MeshStandardMaterial({ color: '#4c4e55', roughness: 0.7, metalness: 0.3 }));
     this.add(props.build(), propMat, { cast: true });
     const shopMat = this.mat(
-      new THREE.MeshStandardMaterial({ map: store[0], emissiveMap: store[1], emissive: new THREE.Color('#ffffff'), emissiveIntensity: 1.6, roughness: 0.6 }),
+      new THREE.MeshStandardMaterial({ map: store[0], emissiveMap: store[1], emissive: new THREE.Color('#ffffff'), emissiveIntensity: 1.05, roughness: 0.85 }),
     );
     this.add(shops.build(), shopMat, { cast: true });
 
@@ -377,83 +382,211 @@ export class CityBuilder {
 
   // ----------------------------------------------------------- highway
 
-  private buildHighway(): void {
+  private buildHighway(index: number): void {
+    const hw = HIGHWAYS[index];
     const concrete = this.tex(T.concreteTexture());
-    const cMat = this.mat(new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.9, color: '#9a9aa0' }));
-    const barrierMat = this.mat(new THREE.MeshStandardMaterial({ color: '#b8b6ae', roughness: 0.8 }));
+    const cMat = this.mat(new THREE.MeshStandardMaterial({ map: concrete, roughness: 1, color: '#6f6f74', side: THREE.DoubleSide }));
+    const barrierMat = this.mat(new THREE.MeshStandardMaterial({ color: '#8c8a84', roughness: 0.95 }));
     const deck = new Batch();
     const barriers = new Batch();
-    const z = HIGHWAY.z;
-    const hw = HIGHWAY.width / 2 + 0.8;
-    const h = HIGHWAY.height;
-    const L = HIGHWAY.deckHalfLength;
-    const R = HIGHWAY.rampEnd;
-    deck.box(-L, h - 1.2, z - hw, L, h, z + hw, { uScale: 8, vScale: 4, top: false, bottom: true });
-    // girders under the deck
-    for (const side of [-1, 1]) deck.box(-L, h - 2.2, z + side * 5 - 0.6, L, h - 1.2, z + side * 5 + 0.6, { uScale: 8, bottom: true, top: false });
-    // pillars with caps
-    for (let x = -165; x <= 165; x += 30) {
-      deck.box(x - 1.3, -0.1, z - 1.3, x + 1.3, h - 2.2, z + 1.3, { uScale: 3, vScale: 4, top: false });
-      deck.box(x - 1.8, h - 3.2, z - 6.5, x + 1.8, h - 2.2, z + 6.5, { uScale: 4, vScale: 2, bottom: true, top: false });
-    }
-    // ramps: sloped solid wedges
+    const hw2 = hw.width / 2 + 0.8;
+    const h = hw.height;
+    const L = hw.deckHalf;
+    const R = hw.rampEnd;
+    const box = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, b: Batch, opts: Parameters<Batch['box']>[6] = {}) => {
+      const r = hwRect(hw, u0, u1, v0, v1);
+      b.box(r.x0, y0, r.z0, r.x1, y1, r.z1, opts);
+    };
+    // deck slab + girders
+    box(-L, L, -hw2, hw2, h - 1.2, h, deck, { uScale: 8, vScale: 4, top: false, bottom: true });
+    for (const side of [-1, 1]) box(-L, L, side * 5 - 0.6, side * 5 + 0.6, h - 2.2, h - 1.2, deck, { uScale: 8, top: false, bottom: true });
+    // ramps as sloped slabs, built in short steps
+    const steps = 14;
     for (const dir of [-1, 1]) {
-      const xa = dir * L;
-      const xb = dir * R;
-      const top: V3[] = [
-        [xa, h, z - hw],
-        [xb, 0, z - hw],
-        [xb, 0, z + hw],
-        [xa, h, z + hw],
-      ];
-      // side walls of the wedge
-      for (const side of [-1, 1]) {
-        const zz = z + side * hw;
-        const a: V3 = [xa, 0, zz];
-        const b: V3 = [xb, 0, zz];
-        const c: V3 = [xa, h, zz];
-        const uv: [number, number][] = [[0, 0], [(R - L) / 8, 0], [0, h / 4], [0, h / 4]];
-        deck.quad(a, b, c, c, uv);
-        deck.quad(b, a, c, c, uv);
-      }
-      // abutment wall at the high end
-      const ze0 = z - hw;
-      const ze1 = z + hw;
-      if (dir > 0) deck.quad([xa, 0, ze1], [xa, 0, ze0], [xa, h, ze0], [xa, h, ze1], [[0, 0], [4, 0], [4, 2.5], [0, 2.5]]);
-      else deck.quad([xa, 0, ze0], [xa, 0, ze1], [xa, h, ze1], [xa, h, ze0], [[0, 0], [4, 0], [4, 2.5], [0, 2.5]]);
-      void top;
-    }
-    // jersey barriers on deck and ramps
-    for (const side of [-1, 1]) {
-      const bz = z + side * (HIGHWAY.width / 2 + 0.4);
-      barriers.box(-L, h, bz - 0.35, L, h + 1.1, bz + 0.35, { uScale: 4, vScale: 1.1 });
-      for (const dir of [-1, 1]) {
-        const steps = 12;
-        for (let k = 0; k < steps; k += 1) {
-          const xa = dir * (L + ((R - L) * k) / steps);
-          const xb = dir * (L + ((R - L) * (k + 1)) / steps);
-          const ya = h * (1 - k / steps);
-          barriers.box(Math.min(xa, xb), ya - 0.2, bz - 0.35, Math.max(xa, xb), ya + 1.1, bz + 0.35, { uScale: 4, vScale: 1.1 });
+      for (let k = 0; k < steps; k += 1) {
+        const ua = dir * (L + ((R - L) * k) / steps);
+        const ub = dir * (L + ((R - L) * (k + 1)) / steps);
+        const ya = hwHeightAt(hw, ua) ?? 0;
+        const yb = hwHeightAt(hw, ub) ?? 0;
+        const top = Math.max(ya, yb);
+        box(ua, ub, -hw2, hw2, Math.max(0, top - 1.2), top - 0.05, deck, { uScale: 8, vScale: 4, top: false, bottom: true });
+        for (const side of [-1, 1]) {
+          const r = hwRect(hw, ua, ub, side * (hw.width / 2 + 0.05), side * (hw.width / 2 + 0.75));
+          barriers.box(r.x0, Math.min(ya, yb) - 0.2, r.z0, r.x1, top + 1.1, r.z1, { uScale: 4, vScale: 1.1 });
         }
       }
     }
+    // pillars (from the collision layout) with cap beams
+    for (const b of this.layout.boxes) {
+      if (b.kind !== 'pillar') continue;
+      const cx = (b.x0 + b.x1) / 2;
+      const cz = (b.z0 + b.z1) / 2;
+      const onThis = hw.axis === 'x' ? Math.abs(cz - hw.line) < 2 : Math.abs(cx - hw.line) < 2;
+      if (!onThis) continue;
+      deck.box(b.x0, -0.1, b.z0, b.x1, b.y1 - 1, b.z1, { uScale: 3, vScale: 4, top: false });
+      const capV = hw.width / 2 - 1.5;
+      const r = hw.axis === 'x' ? { x0: cx - 1.8, x1: cx + 1.8, z0: cz - capV, z1: cz + capV } : { x0: cx - capV, x1: cx + capV, z0: cz - 1.8, z1: cz + 1.8 };
+      deck.box(r.x0, b.y1 - 1, r.z0, r.x1, b.y1, r.z1, { uScale: 4, vScale: 2, bottom: true, top: false });
+    }
+    // jersey barriers on the deck
+    for (const side of [-1, 1]) box(-L, L, side * (hw.width / 2 + 0.05), side * (hw.width / 2 + 0.75), h, h + 1.1, barriers, { uScale: 4, vScale: 1.1 });
     this.add(deck.build(), cMat, { cast: true, receive: true });
     this.add(barriers.build(), barrierMat, { cast: true, receive: true });
 
-    // overhead gantry signs on the deck
-    const gantryMat = this.mat(new THREE.MeshStandardMaterial({ color: '#3a3d44', metalness: 0.6, roughness: 0.4 }));
-    const signMat = this.mat(new THREE.MeshBasicMaterial({ map: this.tex(T.neonSignTexture('EXIT ▶ DOWNTOWN', '#5dff8f')), toneMapped: false }));
-    for (const gx of [-90, 90]) {
+    // overhead gantry signs (posts are solid in the layout)
+    const gantryMat = this.mat(new THREE.MeshStandardMaterial({ color: '#3a3d44', metalness: 0.5, roughness: 0.6 }));
+    const labels = index === 0 ? ['WEST ◀ RIVERSIDE', 'EAST ▶ HILL TUNNEL'] : ['SOUTH ▼ HARBOR', 'NORTH ▲ UPTOWN'];
+    [-L * 0.45, L * 0.45].forEach((gu, gi) => {
       const g = new Batch();
-      g.box(gx - 0.3, h, z - hw, gx + 0.3, h + 7, z - hw + 0.6, { uScale: 1 });
-      g.box(gx - 0.3, h, z + hw - 0.6, gx + 0.3, h + 7, z + hw, { uScale: 1 });
-      g.box(gx - 0.4, h + 6.4, z - hw, gx + 0.4, h + 7.2, z + hw, { uScale: 1 });
+      for (const side of [-1, 1]) box(gu - 0.3, gu + 0.3, side * (hw.width / 2 - 0.6), side * (hw.width / 2), h, h + 7, g, { uScale: 1 });
+      box(gu - 0.4, gu + 0.4, -hw.width / 2, hw.width / 2, h + 6.4, h + 7.2, g, { uScale: 1 });
       this.add(g.build(), gantryMat, { cast: true });
+      const signMat = this.mat(new THREE.MeshBasicMaterial({ map: this.tex(T.neonSignTexture(labels[gi], '#5dff8f')), toneMapped: false }));
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), signMat);
-      sign.position.set(gx + (gx < 0 ? -0.45 : 0.45), h + 5.2, z);
-      sign.rotation.y = gx < 0 ? -Math.PI / 2 : Math.PI / 2;
+      const p = hwPoint(hw, gu + (gu < 0 ? -0.45 : 0.45), 0);
+      sign.position.set(p.x, h + 5.2, p.z);
+      // face the traffic approaching the gantry from the deck centre
+      const towardCentre = gu < 0 ? 1 : -1;
+      sign.rotation.y = hw.axis === 'x' ? (towardCentre > 0 ? Math.PI / 2 : -Math.PI / 2) : towardCentre > 0 ? 0 : Math.PI;
       this.group.add(sign);
+    });
+  }
+
+  // ------------------------------------------------------- roundabouts
+
+  private buildRoundabouts(): void {
+    const ringTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 64;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#26272b';
+      ctx.fillRect(0, 0, 256, 64);
+      for (let i = 0; i < 2200; i += 1) {
+        const v = Math.random() * 50;
+        ctx.fillStyle = `rgba(${v},${v},${v},0.35)`;
+        ctx.fillRect(Math.random() * 256, Math.random() * 64, 2, 2);
+      }
+      ctx.fillStyle = '#d9d6cc';
+      for (let x = 0; x < 256; x += 32) ctx.fillRect(x, 30, 18, 4); // dashed lane divider
+      ctx.fillRect(0, 2, 256, 3);
+      ctx.fillRect(0, 59, 256, 3);
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = THREE.RepeatWrapping;
+      t.colorSpace = THREE.SRGBColorSpace;
+      return this.tex(t);
+    })();
+    ringTex.repeat.set(10, 1);
+    const ringMat = this.mat(new THREE.MeshStandardMaterial({ map: ringTex, roughness: 0.85 }));
+    const curbMat = this.mat(new THREE.MeshStandardMaterial({ color: '#b8b5ab', roughness: 0.8 }));
+    const grassMat = this.mat(new THREE.MeshStandardMaterial({ map: this.tex(T.grassTexture()), roughness: 1 }));
+    const stone = this.mat(new THREE.MeshStandardMaterial({ color: '#9c9486', roughness: 0.75 }));
+    const beacon = this.mat(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.2, 0.6), toneMapped: false }));
+    const { island, outer } = ROUNDABOUT;
+    const parts: THREE.Mesh[] = [];
+    for (const r of this.layout.roundabouts) {
+      // ring road: UVs run around the ring so the dashes follow it
+      const geo = new THREE.RingGeometry(island, outer, 48, 1);
+      const uv = geo.attributes.uv as THREE.BufferAttribute;
+      const pos = geo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i += 1) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const rad = Math.hypot(x, y);
+        uv.setXY(i, (Math.atan2(y, x) / (Math.PI * 2) + 0.5), (rad - island) / (outer - island));
+      }
+      geo.rotateX(-Math.PI / 2);
+      const ring = new THREE.Mesh(geo, ringMat);
+      ring.position.set(r.x, 0.03, r.z);
+      ring.receiveShadow = true;
+      const curb = new THREE.Mesh(new THREE.CylinderGeometry(island, island + 0.2, 0.5, 40), curbMat);
+      curb.position.set(r.x, 0.25, r.z);
+      const lawn = new THREE.Mesh(new THREE.CylinderGeometry(island - 0.4, island - 0.4, 0.55, 40), grassMat);
+      lawn.position.set(r.x, 0.28, r.z);
+      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.8, 1.4, 8), stone);
+      plinth.position.set(r.x, 1.2, r.z);
+      const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 1.1, 9, 4), stone);
+      obelisk.position.set(r.x, 6.3, r.z);
+      obelisk.rotation.y = Math.PI / 4;
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), beacon);
+      cap.position.set(r.x, 11, r.z);
+      parts.push(ring, curb, lawn, plinth, obelisk, cap);
     }
+    // merge all roundabouts into one mesh per material
+    const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    for (const m of parts) {
+      m.updateMatrix();
+      const g = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrix);
+      const list = byMat.get(m.material as THREE.Material) ?? [];
+      list.push(g);
+      byMat.set(m.material as THREE.Material, list);
+      m.geometry.dispose();
+    }
+    for (const [mat, geos] of byMat) {
+      const merged = mergeGeometries(geos);
+      geos.forEach((g) => g.dispose());
+      if (merged) this.add(merged, mat, { cast: mat !== ringMat && mat !== beacon, receive: true });
+    }
+    // small trees on the island edges
+    for (const r of this.layout.roundabouts) {
+      for (let k = 0; k < 5; k += 1) {
+        const a = (k / 5) * Math.PI * 2 + 0.4;
+        this.layout.trees.push({ x: r.x + Math.cos(a) * 6, z: r.z + Math.sin(a) * 6, s: 0.7, y: 0.5 });
+      }
+    }
+  }
+
+  private buildParkingLots(): void {
+    const lots = this.layout.blocks.filter((b) => b.type === 'lot');
+    if (!lots.length) return;
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#2a2b30';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 4000; i += 1) {
+      const v = Math.random() * 60;
+      ctx.fillStyle = `rgba(${v},${v},${v},0.3)`;
+      ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+    }
+    const tex = this.tex(new THREE.CanvasTexture(c));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    const mat = this.mat(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }));
+    const lines = new Batch();
+    const ground = new Batch();
+    for (const b of lots) {
+      ground.upQuad([b.x0, 0.05, b.z0], [b.x1, 0.05, b.z0], [b.x1, 0.05, b.z1], [b.x0, 0.05, b.z1], [[0, 0], [4, 0], [4, 4], [0, 4]]);
+      for (const rz of [b.z0 + 6, b.z0 + 17, b.z1 - 17, b.z1 - 6]) {
+        for (let x = b.x0 + 2.3; x < b.x1 - 2; x += 3.4) lines.upQuad([x - 0.06, 0.07, rz - 2.6], [x + 0.06, 0.07, rz - 2.6], [x + 0.06, 0.07, rz + 2.6], [x - 0.06, 0.07, rz + 2.6]);
+      }
+    }
+    this.add(ground.build(), mat);
+    this.add(lines.build(), this.mat(new THREE.MeshBasicMaterial({ color: '#cfcab8' })));
+    // parked cars: one instanced low-poly body + cabin with per-car colour
+    const cars = this.layout.parkedCars;
+    const bodyGeo = new THREE.BoxGeometry(1.9, 0.75, 4.3);
+    bodyGeo.translate(0, 0.65, 0);
+    const cabGeo = new THREE.BoxGeometry(1.6, 0.6, 2.2);
+    cabGeo.translate(0, 1.3, -0.2);
+    const palette = ['#b8282e', '#2a5fb8', '#e8e8ea', '#3a3d44', '#1f6b4a', '#8a6a3a', '#6a2a8a', '#c4c8cc', '#d47a1f'];
+    const bodies = new THREE.InstancedMesh(bodyGeo, this.mat(new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.25 })), cars.length);
+    const cabs = new THREE.InstancedMesh(cabGeo, this.mat(new THREE.MeshStandardMaterial({ color: '#10151c', roughness: 0.45, metalness: 0.4 })), cars.length);
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const col = new THREE.Color();
+    cars.forEach((car, i) => {
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), car.rot);
+      m4.compose(new THREE.Vector3(car.x, 0, car.z), q, new THREE.Vector3(1, 1, 1));
+      bodies.setMatrixAt(i, m4);
+      cabs.setMatrixAt(i, m4);
+      bodies.setColorAt(i, col.set(palette[car.color % palette.length]));
+    });
+    bodies.castShadow = true;
+    bodies.receiveShadow = true;
+    cabs.castShadow = true;
+    this.group.add(bodies, cabs);
   }
 
   // ------------------------------------------------------------- river
@@ -464,7 +597,7 @@ export class CityBuilder {
     const zA = -CITY_HALF - 10;
     const zB = CITY_HALF + 10;
     const concrete = this.tex(T.concreteTexture());
-    const wallMat = this.mat(new THREE.MeshStandardMaterial({ map: concrete, color: '#7d7f86', roughness: 0.95 }));
+    const wallMat = this.mat(new THREE.MeshStandardMaterial({ map: concrete, color: '#5f6166', roughness: 1, side: THREE.DoubleSide }));
     const walls = new Batch();
     walls.quad([x0, -9, zA], [x0, -9, zB], [x0, 0, zB], [x0, 0, zA], [[0, 0], [100, 0], [100, 2], [0, 2]]);
     walls.quad([x1, -9, zB], [x1, -9, zA], [x1, 0, zA], [x1, 0, zB], [[0, 0], [100, 0], [100, 2], [0, 2]]);
@@ -529,7 +662,7 @@ export class CityBuilder {
 
   private buildHill(): void {
     const concrete = this.tex(T.concreteTexture());
-    const wallMat = this.mat(new THREE.MeshStandardMaterial({ map: concrete, color: '#8a8780', roughness: 0.95 }));
+    const wallMat = this.mat(new THREE.MeshStandardMaterial({ map: concrete, color: '#615e58', roughness: 1, side: THREE.DoubleSide }));
     const tz = HILL.tunnelZ;
     const wallH = 12;
     const walls = new Batch();
@@ -559,7 +692,7 @@ export class CityBuilder {
     tunnel.quad([x1, 0, tz + HR], [x0, 0, tz + HR], [x0, 8.5, tz + HR], [x1, 8.5, tz + HR], [[0, 0], [(x1 - x0) / 4, 0], [(x1 - x0) / 4, 2], [0, 2]]);
     tunnel.quad([x0, 8.5, tz + HR], [x1, 8.5, tz + HR], [x1, 8.5, tz - HR], [x0, 8.5, tz - HR], [[0, 0], [(x1 - x0) / 4, 0], [(x1 - x0) / 4, 4], [0, 4]]);
     const tileTex = this.tex(T.concreteTexture());
-    const tunnelMat = this.mat(new THREE.MeshStandardMaterial({ map: tileTex, color: '#c9c2a8', roughness: 0.6, side: THREE.DoubleSide }));
+    const tunnelMat = this.mat(new THREE.MeshStandardMaterial({ map: tileTex, color: '#8f8a78', roughness: 0.95, side: THREE.DoubleSide }));
     this.add(tunnel.build(), tunnelMat);
     // sodium light strips and stripes
     const strips = new Batch();
@@ -567,7 +700,7 @@ export class CityBuilder {
       strips.box(x, 8.3, tz - 0.4, x + 4, 8.5, tz + 0.4, { uScale: 1 });
       for (const side of [-1, 1]) strips.box(x, 1.0, tz + side * (HR - 0.06) - 0.05, x + 4, 1.25, tz + side * (HR - 0.06) + 0.05, { uScale: 1 });
     }
-    this.add(strips.build(), this.mat(new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.35, 0.45), toneMapped: false })), { receive: false });
+    this.add(strips.build(), this.mat(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.85, 0.3), toneMapped: false })), { receive: false });
     this.add(walls.build(), wallMat, { cast: true });
 
     // grassy mound on top with rock outcrops (vertex-coloured heightfield)
@@ -716,7 +849,7 @@ export class CityBuilder {
           for (let z = b.z0; z <= b.z1; z += 2.5) posts.box(cx - 0.07, 0, z - 0.07, cx + 0.07, 1.05, z + 0.07, { uScale: 1 });
         }
       }
-      if (b.kind === 'prop' && b.y1 < 2) bollards.box(b.x0 + 0.4, 0, b.z0 + 0.4, b.x1 - 0.4, b.y1, b.z1 - 0.4, { uScale: 1 });
+      if (b.kind === 'prop' && b.y1 < 2 && (b.x1 - b.x0) * (b.z1 - b.z0) < 9) bollards.box(b.x0 + 0.4, 0, b.z0 + 0.4, b.x1 - 0.4, b.y1, b.z1 - 0.4, { uScale: 1 });
       if (b.kind === 'wall') {
         rails.box(b.x0, 0, b.z0, b.x1, 5, b.z1, { uScale: 4 });
       }
@@ -729,17 +862,7 @@ export class CityBuilder {
   // ------------------------------------------------------------- lamps
 
   private buildLamps(): void {
-    const lamps = this.layout.lamps;
-    const extra: { x: number; y: number; z: number; rot: number }[] = [];
-    // highway deck lamps (median side, facing both carriageways)
-    for (let x = -170; x <= 170; x += 34) {
-      for (const side of [-1, 1]) extra.push({ x, y: HIGHWAY.height, z: HIGHWAY.z + side * (HIGHWAY.width / 2 + 0.4), rot: side > 0 ? Math.PI : 0 });
-    }
-    // bridge lamps
-    for (const j of RIVER.bridgeRows) {
-      for (const side of [-1, 1]) for (const dx of [-10, 10]) extra.push({ x: RIVER.x + dx, y: 0, z: j * S + side * (HR + 0.6), rot: side > 0 ? Math.PI : 0 });
-    }
-    const all = [...lamps.map((l) => ({ ...l, y: 0 })), ...extra];
+    const all = this.layout.lamps.map((l) => ({ ...l, y: l.y ?? 0 }));
     const poleGeo = new THREE.CylinderGeometry(0.1, 0.16, 7.2, 6);
     poleGeo.translate(0, 3.6, 0);
     const armGeo = new THREE.BoxGeometry(0.12, 0.12, 2.4);
@@ -841,14 +964,14 @@ export class CityBuilder {
   private buildSkyline(): void {
     const facades = [0, 2, 4].map((i) => T.facadeTextures(i));
     const batches = facades.map(() => new Batch());
-    for (let k = 0; k < 140; k += 1) {
-      const a = (k / 140) * Math.PI * 2 + this.rng() * 0.02;
-      const r = 300 + this.rng() * 260;
+    for (let k = 0; k < 190; k += 1) {
+      const a = (k / 190) * Math.PI * 2 + this.rng() * 0.02;
+      const r = 430 + this.rng() * 280;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       const w = 18 + this.rng() * 30;
       const d = 18 + this.rng() * 30;
-      const h = 30 + this.rng() * 120 * (r < 420 ? 1 : 0.7);
+      const h = 30 + this.rng() * 130 * (r < 560 ? 1 : 0.7);
       const i = k % 3;
       batches[i].box(x - w / 2, 0, z - d / 2, x + w / 2, h, z + d / 2, { uScale: facades[i].tileW, vScale: facades[i].tileH, top: false });
     }

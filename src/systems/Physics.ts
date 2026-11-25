@@ -38,6 +38,20 @@ export class Physics {
         this.pushOut(v, b.x0, b.z0, b.x1, b.z1, r);
         v.circle(idx, this.c);
       }
+      // round solids (roundabout islands, fountain)
+      for (const cc of this.layout.circles) {
+        if (v.position.y >= cc.y1 || v.position.y + 1.4 <= cc.y0) continue;
+        const dx = this.c.x - cc.x;
+        const dz = this.c.y - cc.z;
+        const rr = cc.r + r;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= rr * rr) continue;
+        const d = Math.sqrt(d2) || 0.0001;
+        const nx = dx / d;
+        const nz = dz / d;
+        this.applyPush(v, nx, nz, rr - d);
+        v.circle(idx, this.c);
+      }
       // solid surfaces too high to climb (ramp undersides, kicker lips)
       for (const s of this.solidSurfaces) {
         const cx = THREE.MathUtils.clamp(this.c.x, s.x0, s.x1);
@@ -92,6 +106,10 @@ export class Physics {
       nz = dz / d;
       pen = r - d;
     }
+    this.applyPush(v, nx, nz, pen);
+  }
+
+  private applyPush(v: Vehicle, nx: number, nz: number, pen: number): void {
     v.position.x += nx * pen;
     v.position.z += nz * pen;
     const vn = v.velocity.x * nx + v.velocity.y * nz;

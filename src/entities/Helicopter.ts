@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { HIGHWAY, HILL } from '../game/config';
+import { HILL } from '../game/config';
+import type { CityLayout } from '../world/CityLayout';
 import { createHelicopterModel, type HelicopterVisual } from './VehicleModels';
 
 function beamTexture(): THREE.Texture {
@@ -20,10 +21,9 @@ function beamTexture(): THREE.Texture {
 }
 
 /** Whether a ground position is hidden from the air (tunnel, under the elevated highway). */
-export function hiddenFromAir(x: number, y: number, z: number): boolean {
+export function hiddenFromAir(layout: CityLayout, x: number, y: number, z: number): boolean {
   if (x > HILL.x0 && x < HILL.x1 && Math.abs(z - HILL.tunnelZ) < 9) return true;
-  if (y < 5 && Math.abs(z - HIGHWAY.z) < HIGHWAY.width / 2 + 0.5 && Math.abs(x) < HIGHWAY.deckHalfLength) return true;
-  return false;
+  return layout.underDeck(x, y, z);
 }
 
 export class Helicopter {
@@ -111,7 +111,7 @@ export class Helicopter {
     this.spot.intensity = 0;
   }
 
-  update(dt: number, player: THREE.Vector3, playerVel: THREE.Vector2, accuracy: number, elapsed: number): void {
+  update(dt: number, player: THREE.Vector3, playerVel: THREE.Vector2, accuracy: number, elapsed: number, layout: CityLayout): void {
     this.t += dt;
     this.orbit += dt * 0.25;
     // hover point: trailing behind/around the player, high above roofs
@@ -158,14 +158,14 @@ export class Helicopter {
     this.spot.target.position.copy(this.aim);
     this.spot.target.updateMatrixWorld();
     const arrive = this.leaving ? 0 : Math.min(1, Math.max(0, 1 - (Math.hypot(this.position.x - player.x, this.position.z - player.z) - 40) / 120));
-    this.spot.intensity = 1500 * arrive;
+    this.spot.intensity = 900 * arrive;
     const dist = lightPos.distanceTo(this.aim);
     this.beam.position.copy(lightPos);
     this.beam.lookAt(this.aim);
     this.beam.rotateX(-Math.PI / 2);
     const spread = Math.tan(0.2) * dist;
     this.beam.scale.set(spread, dist, spread);
-    (this.beam.material as THREE.MeshBasicMaterial).opacity = arrive * 0.3;
+    (this.beam.material as THREE.MeshBasicMaterial).opacity = arrive * 0.22;
     this.beam.visible = arrive > 0.02;
     this.pool.position.set(this.aim.x, this.aim.y + 0.08, this.aim.z);
     this.pool.scale.setScalar(this.spotRadius);
@@ -173,7 +173,7 @@ export class Helicopter {
     (this.pool.material as THREE.MeshBasicMaterial).opacity = arrive * 0.3;
 
     const d = Math.hypot(player.x - this.aim.x, player.z - this.aim.z);
-    this.spotted = arrive > 0.6 && d < this.spotRadius && !hiddenFromAir(player.x, player.y, player.z);
+    this.spotted = arrive > 0.6 && d < this.spotRadius && !hiddenFromAir(layout, player.x, player.y, player.z);
   }
 
   dispose(scene: THREE.Scene): void {

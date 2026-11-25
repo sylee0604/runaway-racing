@@ -18,6 +18,7 @@ const LANE = 4.2;
 /** Civilian cars wandering the road graph: obstacles for both player and police. */
 export class TrafficSystem {
   readonly civs: Civ[] = [];
+  private readonly target = { x: 0, z: 0 };
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -53,8 +54,9 @@ export class TrafficSystem {
       const dx = t.x - n.x;
       const dz = t.z - n.z;
       const l = Math.hypot(dx, dz) || 1;
-      const sx = n.x + (dx / l) * 14 + (-dz / l) * LANE;
-      const sz = n.z + (dz / l) * 14 + (dx / l) * LANE;
+      const along = n.roundabout ? 24 : 14;
+      const sx = n.x + (dx / l) * along + (-dz / l) * LANE;
+      const sz = n.z + (dz / l) * along + (dx / l) * LANE;
       c.v.place(sx, n.y, sz, heading);
       c.v.health = c.v.spec.health;
       c.from = n.id;
@@ -87,14 +89,11 @@ export class TrafficSystem {
         v.input.handbrake = false;
         continue;
       }
-      const a = this.layout.nodes[c.from];
       const b = this.layout.nodes[c.to];
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const l = Math.hypot(dx, dz) || 1;
-      const tx = b.x + (-dz / l) * LANE;
-      const tz = b.z + (dx / l) * LANE;
-      if (Math.hypot(b.x - v.position.x, b.z - v.position.z) < 10) {
+      this.layout.laneTarget(c.from, c.to, LANE, this.target);
+      const tx = this.target.x;
+      const tz = this.target.z;
+      if (Math.hypot(b.x - v.position.x, b.z - v.position.z) < (b.roundabout ? 16 : 10)) {
         const options = b.edges.filter((e) => e !== c.from);
         const next = options.length ? options[Math.floor(this.rand() * options.length)] : c.from;
         c.from = c.to;
