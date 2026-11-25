@@ -6,3 +6,4 @@ artifacts/pass-*/
 *.log
 .DS_Store
 Thumbs.db
+Claude outputs/
