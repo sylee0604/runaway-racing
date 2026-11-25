@@ -76,9 +76,9 @@ test('renders a nonblank interactive game canvas', async ({ page }, testInfo) =>
       await page.mouse.up();
     }
   } else {
-    await page.keyboard.down('KeyW');
+    await page.keyboard.down('ArrowUp');
     await page.waitForTimeout(1500);
-    await page.keyboard.up('KeyW');
+    await page.keyboard.up('ArrowUp');
   }
 
   // Throttle input must accelerate the car beyond its rolling start speed.

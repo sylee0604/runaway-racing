@@ -87,12 +87,13 @@ export class InputController {
     const k = this.keys;
     let steer = 0;
     let throttle = 0;
-    if (k.has('KeyA') || k.has('ArrowLeft') || this.touch.has('left')) steer += 1;
-    if (k.has('KeyD') || k.has('ArrowRight') || this.touch.has('right')) steer -= 1;
-    if (k.has('KeyW') || k.has('ArrowUp') || this.touch.has('gas')) throttle += 1;
-    if (k.has('KeyS') || k.has('ArrowDown') || this.touch.has('brake')) throttle -= 1;
-    let handbrake = k.has('Space') || this.touch.has('drift');
-    let nitro = k.has('ShiftLeft') || k.has('ShiftRight') || this.touch.has('nitro');
+    // Right hand on the arrow keys, left hand on Space / Shift / Z / X / C.
+    if (k.has('ArrowLeft') || this.touch.has('left')) steer += 1;
+    if (k.has('ArrowRight') || this.touch.has('right')) steer -= 1;
+    if (k.has('ArrowUp') || this.touch.has('gas')) throttle += 1;
+    if (k.has('ArrowDown') || this.touch.has('brake')) throttle -= 1;
+    let handbrake = k.has('Space') || k.has('KeyX') || this.touch.has('drift');
+    let nitro = k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyZ') || this.touch.has('nitro');
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const pad of pads) {

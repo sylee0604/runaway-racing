@@ -21,15 +21,15 @@ type BotSnapshot = {
 // Keyboard sweep tuned to the scaffold arena (22x14, pickups in two rows).
 // Each step holds keys for `ms` then samples diagnostics.
 const INPUT_SCRIPT: Array<{ keys: string[]; ms: number }> = [
-  { keys: ['KeyW'], ms: 1000 },
-  { keys: ['KeyA'], ms: 1900 },
-  { keys: ['KeyD'], ms: 3400 },
-  { keys: ['KeyW'], ms: 350 },
-  { keys: ['KeyA'], ms: 3400 },
-  { keys: ['KeyS'], ms: 1700 },
-  { keys: ['KeyD'], ms: 3400 },
-  { keys: ['KeyS'], ms: 350 },
-  { keys: ['KeyA'], ms: 3400 },
+  { keys: ['ArrowUp'], ms: 1000 },
+  { keys: ['ArrowLeft'], ms: 1900 },
+  { keys: ['ArrowRight'], ms: 3400 },
+  { keys: ['ArrowUp'], ms: 350 },
+  { keys: ['ArrowLeft'], ms: 3400 },
+  { keys: ['ArrowDown'], ms: 1700 },
+  { keys: ['ArrowRight'], ms: 3400 },
+  { keys: ['ArrowDown'], ms: 350 },
+  { keys: ['ArrowLeft'], ms: 3400 },
 ];
 
 test('bot playtest: scripted input drives progress without errors', async ({ page }, testInfo) => {
